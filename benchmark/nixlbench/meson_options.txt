@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,3 +27,5 @@ option('nvshmem_inc_path', type: 'string', value: '', description: 'Path to NVSH
 option('nvshmem_lib_path', type: 'string', value: '', description: 'Path to NVSHMEM library directory')
 option('rocm_path', type: 'string', value: '', description: 'Path to the ROCm installation directory (used only when use_rocm=true). Empty falls back to /opt/rocm.')
 option('use_rocm', type: 'boolean', value: false, description: 'Build nixlbench against AMD ROCm/HIP instead of CUDA. Default false; the NVIDIA path is unchanged.')
+option('rocshmem_inc_path', type: 'string', value: '', description: 'Path to rocSHMEM include directory')
+option('rocshmem_lib_path', type: 'string', value: '', description: 'Path to rocSHMEM library directory')

@@ -1,5 +1,6 @@
 /*
  * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +25,9 @@
 #include "worker/nixl/nixl_worker.h"
 #if HAVE_NVSHMEM && HAVE_CUDA
 #include "worker/nvshmem/nvshmem_worker.h"
+#endif
+#if HAVE_ROCSHMEM && HAVE_ROCM
+#include "worker/rocshmem/rocshmem_worker.h"
 #endif
 #include <unistd.h>
 #include <memory>
@@ -171,6 +175,13 @@ createWorker() {
         return std::make_unique<xferBenchNvshmemWorker>();
 #else
         std::cerr << "NVSHMEM worker requested but NVSHMEM or CUDA is not available" << std::endl;
+        return nullptr;
+#endif
+    } else if (xferBenchConfig::worker_type == "rocshmem") {
+#if HAVE_ROCSHMEM && HAVE_ROCM
+        return std::make_unique<xferBenchRocshmemWorker>();
+#else
+        std::cerr << "rocSHMEM worker requested but rocSHMEM or ROCm is not available" << std::endl;
         return nullptr;
 #endif
     } else {

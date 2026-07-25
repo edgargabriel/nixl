@@ -14,45 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-worker_sources = [
-  'worker.cpp',
-  'worker.h',
-]
-
-worker_deps = [
-  openmp_dep,
-  etcd_dep,
-  tomlplusplus_dep
-]
-
-if cuda_available
-  worker_deps += [cuda_dep]
-elif rocm_available
-  worker_deps += [rocm_dep]
-endif
-
-worker_lib = static_library('worker',
-  worker_sources,
-  dependencies: [worker_deps],
-  include_directories: inc_dir
-)
-
-worker_dep = declare_dependency(
-  link_with: worker_lib,
-  dependencies: [worker_deps],
-  include_directories: inc_dir
-)
-
-# Include subdirectories
-subdir('nixl')
-subdir('nvshmem')
-subdir('rocshmem')
-
-# Combine all worker libraries
-worker_libs = [worker_lib, nixl_worker_lib]
-if nvshmem_available
-  worker_libs += [nvshmem_worker_lib]
-endif
 if rocshmem_available
-  worker_libs += [rocshmem_worker_lib]
+  rocshmem_worker_sources = [
+    'rocshmem_worker.cpp',
+    'rocshmem_worker.h',
+  ]
+
+  rocshmem_worker_lib = static_library('rocshmemWorker',
+    rocshmem_worker_sources,
+    include_directories: inc_dir,
+    dependencies: [rocm_dep, rocshmem_lib, hsa_runtime_lib, tomlplusplus_dep],
+    install: true,
+  )
 endif

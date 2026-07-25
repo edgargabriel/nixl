@@ -1,5 +1,6 @@
 /*
  * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -140,6 +141,7 @@
 // Worker types
 #define XFERBENCH_WORKER_NIXL "nixl"
 #define XFERBENCH_WORKER_NVSHMEM "nvshmem"
+#define XFERBENCH_WORKER_ROCSHMEM "rocshmem"
 
 // Randomization location modes
 #define XFERBENCH_RANDOMIZE_LOCATION_MODE_NONE "none"

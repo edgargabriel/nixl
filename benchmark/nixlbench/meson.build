@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -176,6 +177,22 @@ if nvshmem_lib_path != ''
     endif
 endif
 
+rocshmem_available = false
+rocshmem_inc_path = get_option('rocshmem_inc_path')
+rocshmem_lib_path = get_option('rocshmem_lib_path')
+rocshmem_inc = rocshmem_inc_path
+if rocm_available and rocshmem_lib_path != ''
+    if cpp.has_header('rocshmem/rocshmem.hpp', include_directories: include_directories(rocshmem_inc))
+        rocshmem_lib = cpp.find_library('rocshmem', dirs: [rocshmem_lib_path])
+        hsa_runtime_lib = cpp.find_library('hsa-runtime64', dirs: [rocm_lib_path])
+        if rocshmem_lib.found()
+            rocshmem_available = true
+            inc_dir = include_directories('.', './src/', nixl_inc, rocshmem_inc)
+            add_project_arguments('-DHAVE_ROCSHMEM', language: 'cpp')
+        endif
+    endif
+endif
+
 if cuda_available
     add_project_arguments('-DHAVE_CUDA', language: 'cpp')
 endif
@@ -327,6 +344,7 @@ configure_file(
         'HAVE_NVSHMEM': nvshmem_available ? '1' : '0',
         'HAVE_CUDA': cuda_available ? '1' : '0',
         'HAVE_ROCM': rocm_available ? '1' : '0',
+        'HAVE_ROCSHMEM': rocshmem_available ? '1' : '0',
         'HAVE_CUDA_FABRIC': cuda_fabric_available ? '1' : '0',
     },
     install: true,
@@ -348,6 +366,11 @@ if ucx_gpu_device_api_available
 endif
 if nvshmem_available
     deps += [nvshmem_lib]
+endif
+if rocshmem_available
+    deps += [rocshmem_lib, hsa_runtime_lib]
+endif
+if nvshmem_available
     args += [
         '-Xcompiler', '-fopenmp',
         '-Xlinker', '-rpath=/usr/local/cuda/lib64',
@@ -403,6 +426,61 @@ if nvshmem_available
         input: 'src/main.cpp',
         output: 'nixlbench',
         command: nvcc_command,
+        build_by_default: true,
+        install: true,
+        install_dir: get_option('bindir'),
+        depends: [nixlbench_runtimes, utils_lib, worker_libs])
+elif rocshmem_available
+    # Use hipcc directly for compilation and linking (librocshmem.a contains HIP device code)
+    hipcc = find_program('hipcc')
+    hipcc_args = []
+    if etcd_available
+        if etcd_inc != ''
+            hipcc_args += ['-I' + etcd_inc]
+        endif
+    endif
+    hipcc_args += ['-I' + nixl_inc]
+    hipcc_args += ['-I' + rocshmem_inc]
+    hipcc_args += ['-I.', '-I./src/', '-I../src/']
+    hipcc_args += ['-I' + meson.current_build_dir()]
+    foreach arg : tomlplusplus_dep.get_compile_args()
+        if arg.startswith('-I') or arg.startswith('-isystem')
+            hipcc_args += [arg]
+        endif
+    endforeach
+    if etcd_available
+        if etcd_lib_path != ''
+            hipcc_args += ['-L' + etcd_lib_path]
+        endif
+    endif
+    hipcc_args += ['-L' + nixl_lib_path]
+    hipcc_args += ['-L' + rocshmem_lib_path]
+    hipcc_args += ['-L' + rocm_lib_path]
+    hipcc_args += ['-L' + meson.current_build_dir() + '/src/utils']
+    hipcc_args += ['-L' + meson.current_build_dir() + '/src/runtime']
+    hipcc_args += ['-L' + meson.current_build_dir() + '/src/worker']
+    hipcc_args += ['-lnixl', '-lnixl_build', '-lserdes', '-lamdhip64', '-lrocshmem', '-lhsa-runtime64']
+    hipcc_cmd_files = [
+                 meson.current_build_dir() + '/src/utils/libutils.a.p/utils.cpp.o',
+                 meson.current_build_dir() + '/src/runtime/libruntime.a.p/runtime.cpp.o',
+                 meson.current_build_dir() + '/src/worker/libworker.a.p/worker.cpp.o',
+                 meson.current_build_dir() + '/src/worker/nixl/libnixl_worker.a.p/nixl_worker.cpp.o',
+                 meson.current_build_dir() + '/src/worker/rocshmem/librocshmemWorker.a.p/rocshmem_worker.cpp.o'
+                 ]
+
+    if etcd_available
+        hipcc_args += ['-letcd-cpp-api-core', '-lcpprest']
+        etcd_rt = meson.current_build_dir() + '/src/runtime/etcd/libetcd_rt.a.p/etcd_rt.cpp.o'
+        hipcc_cmd_files += etcd_rt
+    endif
+
+    hipcc_command = [hipcc, hipcc_args, '-o', '@OUTPUT@', '@INPUT@']
+    hipcc_command += hipcc_cmd_files
+
+    custom_target('nixlbench',
+        input: 'src/main.cpp',
+        output: 'nixlbench',
+        command: hipcc_command,
         build_by_default: true,
         install: true,
         install_dir: get_option('bindir'),
