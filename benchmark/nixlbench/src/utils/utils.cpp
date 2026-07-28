@@ -1,5 +1,6 @@
 /*
  * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,7 +55,7 @@ NB_ARG_STRING(
 NB_ARG_STRING(runtime_type,
               XFERBENCH_RT_ETCD,
               "Runtime type to use for communication [ETCD, ASIO]");
-NB_ARG_STRING(worker_type, XFERBENCH_WORKER_NIXL, "Type of worker [nixl, nvshmem]");
+NB_ARG_STRING(worker_type, XFERBENCH_WORKER_NIXL, "Type of worker [nixl, nvshmem, rocshmem]");
 NB_ARG_STRING(backend,
               XFERBENCH_BACKEND_UCX,
               "Name of NIXL backend [UCX, GDS, GDS_MT, POSIX, GPUNETIO, Mooncake, HF3FS, OBJ, "
@@ -802,7 +803,7 @@ xferBenchConfig::printConfig() {
         printOption("ASIO Address (--asio_address) ", asio_address);
         printOption("ASIO Port (--asio_port) ", std::to_string(asio_port));
     }
-    printOption("Worker type (--worker_type=[nixl,nvshmem])", worker_type);
+    printOption("Worker type (--worker_type=[nixl,nvshmem,rocshmem])", worker_type);
     if (worker_type == XFERBENCH_WORKER_NIXL) {
         printOption("Backend (--backend=[UCX,GDS,GDS_MT,POSIX,Mooncake,HF3FS,OBJ,AZURE_BLOB])",
                     backend);

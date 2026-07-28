@@ -46,13 +46,13 @@ worker_dep = declare_dependency(
 # Include subdirectories
 subdir('nixl')
 subdir('nvshmem')
-# subdir('rocshmem')  # disabled: HIP fat-binary link issue, re-enable when resolved
+subdir('rocshmem')
 
 # Combine all worker libraries
 worker_libs = [worker_lib, nixl_worker_lib]
 if nvshmem_available
   worker_libs += [nvshmem_worker_lib]
 endif
-# if rocshmem_available
-#   worker_libs += [rocshmem_worker_lib]
-# endif
+if rocshmem_available
+  worker_libs += [rocshmem_worker_lib]
+endif

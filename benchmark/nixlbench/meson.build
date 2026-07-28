@@ -178,22 +178,20 @@ if nvshmem_lib_path != ''
 endif
 
 rocshmem_available = false
-# rocshmem detection disabled: HIP fat-binary finalisation not yet resolved.
-# Re-enable by uncommenting the block below.
-# rocshmem_inc_path = get_option('rocshmem_inc_path')
-# rocshmem_lib_path = get_option('rocshmem_lib_path')
-# rocshmem_inc = rocshmem_inc_path
-# if rocm_available and rocshmem_lib_path != ''
-#     if cpp.has_header('rocshmem/rocshmem.hpp', include_directories: include_directories(rocshmem_inc))
-#         rocshmem_lib = cpp.find_library('rocshmem', dirs: [rocshmem_lib_path])
-#         hsa_runtime_lib = cpp.find_library('hsa-runtime64', dirs: [rocm_lib_path])
-#         if rocshmem_lib.found()
-#             rocshmem_available = true
-#             inc_dir = include_directories('.', './src/', nixl_inc, rocshmem_inc)
-#             add_project_arguments('-DHAVE_ROCSHMEM', language: 'cpp')
-#         endif
-#     endif
-# endif
+rocshmem_inc_path = get_option('rocshmem_inc_path')
+rocshmem_lib_path = get_option('rocshmem_lib_path')
+rocshmem_inc = rocshmem_inc_path
+if rocm_available and rocshmem_lib_path != ''
+    if cpp.has_header('rocshmem/rocshmem.hpp', include_directories: include_directories(rocshmem_inc))
+        rocshmem_lib = cpp.find_library('rocshmem', dirs: [rocshmem_lib_path])
+        hsa_runtime_lib = cpp.find_library('hsa-runtime64', dirs: [rocm_lib_path])
+        if rocshmem_lib.found()
+            rocshmem_available = true
+            inc_dir = include_directories('.', './src/', nixl_inc, rocshmem_inc)
+            add_project_arguments('-DHAVE_ROCSHMEM', language: 'cpp')
+        endif
+    endif
+endif
 
 if cuda_available
     add_project_arguments('-DHAVE_CUDA', language: 'cpp')
@@ -369,9 +367,9 @@ endif
 if nvshmem_available
     deps += [nvshmem_lib]
 endif
-# if rocshmem_available
-#     deps += [rocshmem_lib, hsa_runtime_lib]
-# endif
+if rocshmem_available
+    deps += [rocshmem_lib, hsa_runtime_lib]
+endif
 if nvshmem_available
     args += [
         '-Xcompiler', '-fopenmp',
@@ -433,68 +431,74 @@ if nvshmem_available
         install_dir: get_option('bindir'),
         depends: [nixlbench_runtimes, utils_lib, worker_libs])
 elif rocshmem_available
-    # NOTE: librocshmem.a embeds HIP device fat binaries (__hip_fatbin_* /
-    # __hip_gpubin_handle_*) that require HIP device-code finalisation at link time.
-    # hipcc invokes clang++ in --driver-mode=g++ (GCC compat mode) which does not
-    # perform this finalisation, leaving those symbols unresolved.  This is a known
-    # limitation of the hipcc wrapper and is left as a future debugging task.
-    # The executable() below links correctly for everything except the HIP fat binary
-    # registration — once the finalisation issue is resolved no structural changes
-    # should be needed here.
+    # ROCShmem requires a two-step hipcc build with -fgpu-rdc:
+    #   compile: hipcc -c -fgpu-rdc -x hip <src> -I...
+    #   link:    hipcc -fgpu-rdc --hip-link <objs> librocshmem.a -L/opt/rocm/lib -lamdhip64 -lhsa-runtime64
+    # librocshmem.a must be passed as a positional argument (not -lrocshmem) so
+    # hipcc's --hip-link pass can see and finalise the embedded HIP fat binaries.
     hipcc = find_program('hipcc')
+    hipcc_bin = hipcc.full_path()
 
-    hipcc_args = []
-    if etcd_available
-        if etcd_inc != ''
-            hipcc_args += ['-I' + etcd_inc]
-        endif
+    # --- include flags (compile step only) ---
+    hipcc_inc_args = []
+    if etcd_available and etcd_inc != ''
+        hipcc_inc_args += ['-I' + etcd_inc]
     endif
-    hipcc_args += ['-I' + nixl_inc]
-    hipcc_args += ['-I' + rocshmem_inc]
-    hipcc_args += ['-I.', '-I./src/', '-I../src/']
-    hipcc_args += ['-I' + meson.current_build_dir()]
+    hipcc_inc_args += ['-I' + nixl_inc]
+    hipcc_inc_args += ['-I' + rocshmem_inc]
+    hipcc_inc_args += ['-I.', '-I./src/', '-I../src/']
+    hipcc_inc_args += ['-I' + meson.current_build_dir()]
     if tomlplusplus_dep.type_name() == 'pkgconfig' or tomlplusplus_dep.type_name() == 'cmake'
         foreach arg : tomlplusplus_dep.get_compile_args()
             if arg.startswith('-I') or arg.startswith('-isystem')
-                hipcc_args += [arg]
+                hipcc_inc_args += [arg]
             endif
         endforeach
     else
         tomlplusplus_subproject_inc = meson.project_source_root() / 'subprojects' / 'tomlplusplus-3.4.0' / 'include'
-        hipcc_args += ['-I' + tomlplusplus_subproject_inc]
-    endif
-    if etcd_available
-        if etcd_lib_path != ''
-            hipcc_args += ['-L' + etcd_lib_path]
-        endif
-    endif
-    hipcc_args += ['-L' + nixl_lib_path]
-    hipcc_args += ['-L' + rocshmem_lib_path]
-    hipcc_args += ['-L' + rocm_lib_path]
-    hipcc_args += ['-fopenmp']
-    hipcc_args += ['-lnixl', '-lnixl_build', '-lserdes', '-lrocshmem', '-lamdhip64', '-lhsa-runtime64', '-lgflags']
-    if etcd_available
-        hipcc_args += ['-letcd-cpp-api-core', '-lcpprest']
+        hipcc_inc_args += ['-I' + tomlplusplus_subproject_inc]
     endif
 
-    hipcc_bin = hipcc.full_path()
-    hipcc_flags_str = ' '.join(hipcc_args)
+    # --- link-step flags ---
+    hipcc_link_lib_args = []
+    if etcd_available and etcd_lib_path != ''
+        hipcc_link_lib_args += ['-L' + etcd_lib_path]
+    endif
+    hipcc_link_lib_args += ['-L' + nixl_lib_path]
+    # /opt/rocm/lib (not /opt/rocm/core/lib) per rocshmem example build instructions
+    hipcc_link_lib_args += ['-L' + rocm_path + '/../lib']
+    hipcc_link_lib_args += ['-fopenmp']
+    hipcc_link_lib_args += ['-lnixl', '-lnixl_build', '-lserdes', '-lamdhip64', '-lhsa-runtime64', '-lgflags']
+    if etcd_available
+        hipcc_link_lib_args += ['-letcd-cpp-api-core', '-lcpprest']
+    endif
 
-    hipcc_shell_script = hipcc_bin + ' ' + hipcc_flags_str \
-        + ' -Wl,' + meson.current_build_dir() + '/src/utils/libutils.a.p/neuron.cpp.o' \
-        + ' -Wl,' + meson.current_build_dir() + '/src/utils/libutils.a.p/utils.cpp.o' \
-        + ' -Wl,' + meson.current_build_dir() + '/src/runtime/libruntime.a.p/runtime.cpp.o' \
-        + ' -Wl,' + meson.current_build_dir() + '/src/worker/libworker.a.p/worker.cpp.o' \
-        + ' -Wl,' + meson.current_build_dir() + '/src/worker/nixl/libnixl_worker.a.p/nixl_worker.cpp.o' \
-        + ' -Wl,' + meson.current_build_dir() + '/src/worker/nixl/libnixl_worker.a.p/nixl_mem_region.cpp.o' \
-        + ' -Wl,' + meson.current_build_dir() + '/src/worker/rocshmem/librocshmemWorker.a.p/rocshmem_worker.cpp.o' \
-        + (etcd_available ? ' -Wl,' + meson.current_build_dir() + '/src/runtime/etcd/libetcd_rt.a.p/etcd_rt.cpp.o' : '') \
-        + ' @INPUT@ -o @OUTPUT@'
+    # Object files from our own static libs — passed via -Wl, to prevent hipcc/clang
+    # from treating the .cpp.o double extension as a source file to compile.
+    hipcc_obj_args = [
+        '-Wl,' + meson.current_build_dir() + '/src/utils/libutils.a.p/neuron.cpp.o',
+        '-Wl,' + meson.current_build_dir() + '/src/utils/libutils.a.p/utils.cpp.o',
+        '-Wl,' + meson.current_build_dir() + '/src/runtime/libruntime.a.p/runtime.cpp.o',
+        '-Wl,' + meson.current_build_dir() + '/src/worker/libworker.a.p/worker.cpp.o',
+        '-Wl,' + meson.current_build_dir() + '/src/worker/nixl/libnixl_worker.a.p/nixl_worker.cpp.o',
+        '-Wl,' + meson.current_build_dir() + '/src/worker/nixl/libnixl_worker.a.p/nixl_mem_region.cpp.o',
+        '-Wl,' + meson.current_build_dir() + '/src/worker/rocshmem/librocshmemWorker.a.p/rocshmem_worker.cpp.o',
+    ]
+    if etcd_available
+        hipcc_obj_args += ['-Wl,' + meson.current_build_dir() + '/src/runtime/etcd/libetcd_rt.a.p/etcd_rt.cpp.o']
+    endif
+
+    rocshmem_a    = rocshmem_lib_path + '/librocshmem.a'
+    main_cpp      = meson.current_source_dir() + '/src/main.cpp'
+    compile_cmd   = hipcc_bin + ' -fgpu-rdc -x hip ' + ' '.join(hipcc_inc_args) + ' -c ' + main_cpp + ' -o "$TMPDIR/main.o"'
+    link_cmd      = hipcc_bin + ' -fgpu-rdc --hip-link ' + ' '.join(hipcc_obj_args) + ' ' + rocshmem_a + ' ' + ' '.join(hipcc_link_lib_args) + ' "$TMPDIR/main.o" -o "$0"'
+
+    # Two-step build per rocshmem example instructions: $0 = @OUTPUT@
+    hipcc_shell_script = 'set -e\nTMPDIR=$(mktemp -d)\ntrap \'rm -rf "$TMPDIR"\' EXIT\n' + compile_cmd + '\n' + link_cmd + '\n'
 
     custom_target('nixlbench',
-        input: 'src/main.cpp',
         output: 'nixlbench',
-        command: ['bash', '-c', hipcc_shell_script],
+        command: ['bash', '-c', hipcc_shell_script, '@OUTPUT@'],
         build_by_default: true,
         install: true,
         install_dir: get_option('bindir'),
