@@ -461,8 +461,12 @@ elif rocshmem_available
 
     # --- link-step flags ---
     hipcc_link_lib_args = []
-    if etcd_available and etcd_lib_path != ''
-        hipcc_link_lib_args += ['-L' + etcd_lib_path]
+    if etcd_available
+        if etcd_lib_path != ''
+            hipcc_link_lib_args += ['-L' + etcd_lib_path]
+        else
+            hipcc_link_lib_args += ['-L/usr/local/lib']
+        endif
     endif
     hipcc_link_lib_args += ['-L' + nixl_lib_path]
     # /opt/rocm/lib (not /opt/rocm/core/lib) per rocshmem example build instructions

@@ -242,7 +242,7 @@ int xferBenchRocshmemWorker::synchronizeStart() {
             rocshmem_get_uniqueid(&group_id);
         }
 
-        rt->broadcastInt((int *)&group_id, sizeof(rocshmem_uniqueid_t), 0);
+        rt->broadcastInt((int *)&group_id, sizeof(rocshmem_uniqueid_t) / sizeof(int), 0);
         group_id_initialized = 1;
 
         rocshmem_set_attr_uniqueid_args(rank, size, &group_id, &attr);
