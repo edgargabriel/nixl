@@ -56,13 +56,17 @@ xferBenchRocshmemWorker::xferBenchRocshmemWorker() : xferBenchWorker() {
 }
 
 xferBenchRocshmemWorker::~xferBenchRocshmemWorker() {
+    std::cout << "rocSHMEM: calling rocshmem_finalize" << std::endl;
     rocshmem_finalize();
+    std::cout << "rocSHMEM: rocshmem_finalize done" << std::endl;
 }
 
 std::optional<xferBenchIOV> xferBenchRocshmemWorker::initBasicDescRocshmem(size_t buffer_size, int mem_dev_id) {
     void *addr;
 
+    std::cout << "rocSHMEM: calling rocshmem_malloc size=" << buffer_size << std::endl;
     addr = rocshmem_malloc(buffer_size);
+    std::cout << "rocSHMEM: rocshmem_malloc returned addr=" << addr << std::endl;
     if (!addr) {
         std::cerr << "Failed to allocate " << buffer_size << " bytes of rocSHMEM memory" << std::endl;
         return std::nullopt;
@@ -82,7 +86,9 @@ std::optional<xferBenchIOV> xferBenchRocshmemWorker::initBasicDescRocshmem(size_
 }
 
 void xferBenchRocshmemWorker::cleanupBasicDescRocshmem(xferBenchIOV &iov) {
+    std::cout << "rocSHMEM: calling rocshmem_free addr=" << (void *)iov.addr << std::endl;
     rocshmem_free((void *)iov.addr);
+    std::cout << "rocSHMEM: rocshmem_free done" << std::endl;
 }
 
 std::vector<std::vector<xferBenchIOV>> xferBenchRocshmemWorker::allocateMemory(int num_threads) {
@@ -116,7 +122,9 @@ std::vector<std::vector<xferBenchIOV>> xferBenchRocshmemWorker::allocateMemory(i
 }
 
 void xferBenchRocshmemWorker::deallocateMemory(std::vector<std::vector<xferBenchIOV>> &iov_lists) {
+    std::cout << "rocSHMEM: calling rocshmem_barrier_all (deallocate)" << std::endl;
     rocshmem_barrier_all();
+    std::cout << "rocSHMEM: rocshmem_barrier_all done (deallocate)" << std::endl;
     for (auto &iov_list: iov_lists) {
         for (auto &iov: iov_list) {
             cleanupBasicDescRocshmem(iov);
@@ -159,14 +167,22 @@ execTransfer(const std::vector<std::vector<xferBenchIOV>> &local_iovs,
             auto &local = local_iov[i];
             auto &remote = remote_iov[i];
             if (XFERBENCH_OP_WRITE == xferBenchConfig::op_type) {
+                std::cout << "rocSHMEM: calling rocshmem_putmem_on_stream len=" << local.len
+                          << " pe=" << target_rank << std::endl;
                 rocshmem_putmem_on_stream(
                     (void *)remote.addr, (void *)local.addr, local.len, target_rank, stream);
+                std::cout << "rocSHMEM: rocshmem_putmem_on_stream done" << std::endl;
             } else if (XFERBENCH_OP_READ == xferBenchConfig::op_type) {
+                std::cout << "rocSHMEM: calling rocshmem_getmem_on_stream len=" << local.len
+                          << " pe=" << target_rank << std::endl;
                 rocshmem_getmem_on_stream(
                     (void *)remote.addr, (void *)local.addr, local.len, target_rank, stream);
+                std::cout << "rocSHMEM: rocshmem_getmem_on_stream done" << std::endl;
             }
         }
+        std::cout << "rocSHMEM: calling rocshmem_quiet_on_stream" << std::endl;
         rocshmem_quiet_on_stream(stream);
+        std::cout << "rocSHMEM: rocshmem_quiet_on_stream done" << std::endl;
         nixlTime::us_t transfer_duration = timer.lap();
         stats.transfer_duration.add(transfer_duration);
     }
@@ -205,7 +221,9 @@ xferBenchRocshmemWorker::transfer(size_t block_size,
         }
         stats.clear();
     }
+    std::cout << "rocSHMEM: calling rocshmem_barrier_all_on_stream (pre-transfer)" << std::endl;
     rocshmem_barrier_all_on_stream(stream);
+    std::cout << "rocSHMEM: rocshmem_barrier_all_on_stream done (pre-transfer)" << std::endl;
     CHECK_HIP_ERROR(hipStreamSynchronize(stream), "Failed to synchronize HIP stream");
 
     CHECK_HIP_ERROR(hipEventRecord(start_event, stream), "Failed to record HIP event");
@@ -214,7 +232,9 @@ xferBenchRocshmemWorker::transfer(size_t block_size,
 
     CHECK_HIP_ERROR(hipEventRecord(stop_event, stream), "Failed to record HIP event");
 
+    std::cout << "rocSHMEM: calling rocshmem_barrier_all_on_stream (post-transfer)" << std::endl;
     rocshmem_barrier_all_on_stream(stream);
+    std::cout << "rocSHMEM: rocshmem_barrier_all_on_stream done (post-transfer)" << std::endl;
     CHECK_HIP_ERROR(hipEventSynchronize(stop_event), "Failed to synchronize HIP event");
     CHECK_HIP_ERROR(hipStreamSynchronize(stream), "Failed to synchronize HIP stream");
 
@@ -226,10 +246,14 @@ void
 xferBenchRocshmemWorker::poll(size_t block_size) {
     // For rocSHMEM, we don't need to poll
     // The transfer is already complete when we reach this point
+    std::cout << "rocSHMEM: calling rocshmem_barrier_all_on_stream (poll 1)" << std::endl;
     rocshmem_barrier_all_on_stream(stream);
+    std::cout << "rocSHMEM: rocshmem_barrier_all_on_stream done (poll 1)" << std::endl;
     CHECK_HIP_ERROR(hipStreamSynchronize(stream), "Failed to synchronize HIP stream");
 
+    std::cout << "rocSHMEM: calling rocshmem_barrier_all_on_stream (poll 2)" << std::endl;
     rocshmem_barrier_all_on_stream(stream);
+    std::cout << "rocSHMEM: rocshmem_barrier_all_on_stream done (poll 2)" << std::endl;
     CHECK_HIP_ERROR(hipStreamSynchronize(stream), "Failed to synchronize HIP stream");
 }
 
@@ -239,22 +263,29 @@ int xferBenchRocshmemWorker::synchronizeStart() {
 
     if (xferBenchConfig::runtime_type == XFERBENCH_RT_ETCD) {
         if (rank == 0 && group_id_initialized == 0) {
+            std::cout << "rocSHMEM: calling rocshmem_get_uniqueid (rank 0)" << std::endl;
             rocshmem_get_uniqueid(&group_id);
+            std::cout << "rocSHMEM: rocshmem_get_uniqueid done" << std::endl;
         }
 
         rt->broadcastInt((int *)&group_id, sizeof(rocshmem_uniqueid_t) / sizeof(int), 0);
         group_id_initialized = 1;
 
+        std::cout << "rocSHMEM: calling rocshmem_set_attr_uniqueid_args rank=" << rank << " size=" << size << std::endl;
         rocshmem_set_attr_uniqueid_args(rank, size, &group_id, &attr);
+        std::cout << "rocSHMEM: calling rocshmem_init_attr" << std::endl;
         rocshmem_init_attr(ROCSHMEM_INIT_WITH_UNIQUEID, &attr);
+        std::cout << "rocSHMEM: rocshmem_init_attr done" << std::endl;
 
         // Create a stream
         CHECK_HIP_ERROR(hipSetDevice(rank), "Failed to set HIP device");
         CHECK_HIP_ERROR(hipStreamCreate(&stream), "Failed to create HIP stream");
+        std::cout << "rocSHMEM: HIP stream created" << std::endl;
     }
 
-    // Barrier to ensure all workers have initialized rocSHMEM
+    std::cout << "rocSHMEM: calling rocshmem_barrier_all_on_stream (synchronizeStart)" << std::endl;
     rocshmem_barrier_all_on_stream(stream);
+    std::cout << "rocSHMEM: rocshmem_barrier_all_on_stream done (synchronizeStart)" << std::endl;
 
     return 0;
 }
